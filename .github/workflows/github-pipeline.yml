@@ -233,8 +233,8 @@ jobs:
               \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env\",
               \"cat /home/ec2-user/.env\",
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"docker compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env pull\",
-              \"docker compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env up -d --remove-orphans\",
+              \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env pull\",
+              \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env up -d --remove-orphans\",
               \"docker ps -a\",
               \"docker image prune -f\"
             ]" \
@@ -315,8 +315,8 @@ jobs:
               \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env.frontend\",
               \"cat /home/ec2-user/.env.frontend\",
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"docker compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend pull\",
-              \"docker compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend up -d --remove-orphans\",
+              \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend pull\",
+              \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend up -d --remove-orphans\",
               \"docker ps -a\",
               \"docker logs front-despacho || true\",
               \"docker image prune -f\"
