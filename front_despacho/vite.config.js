@@ -5,11 +5,16 @@ import react from '@vitejs/plugin-react-swc'
 export default defineConfig({
   plugins: [react()],
   server: {
+    // En desarrollo local, el proxy redirige /api/* al backend local
+    // En producción (Docker), Nginx hace el proxy — este bloque no aplica
     proxy: {
-      '/api': {
-        target: 'https://qic534o8o0.execute-api.us-east-1.amazonaws.com',
+      '/api/v1/ventas': {
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8080',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+      },
+      '/api/v1/despachos': {
+        target: process.env.VITE_BACKEND_URL || 'http://localhost:8081',
+        changeOrigin: true,
       }
     }
   }

@@ -1,0 +1,62 @@
+services:
+
+  # ─────────────────────────────────────────────────────────
+  # BACKEND — Ventas (Spring Boot :8080)
+  # Corre en la EC2 de Backend (subred privada)
+  # ─────────────────────────────────────────────────────────
+  back-ventas:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/innovatech/back-ventas:${IMAGE_TAG:-latest}
+    container_name: back-ventas
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Variables de DB inyectadas desde GitHub Secrets via pipeline
+      DB_ENDPOINT: ${DB_ENDPOINT}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME_VENTAS:-ventas}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider",
+             "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ─────────────────────────────────────────────────────────
+  # BACKEND — Despachos (Spring Boot :8081)
+  # ─────────────────────────────────────────────────────────
+  back-despachos:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/innovatech/back-despachos:${IMAGE_TAG:-latest}
+    container_name: back-despachos
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      DB_ENDPOINT: ${DB_ENDPOINT}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME_DESPACHOS:-despachos}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+    networks:
+      - backend-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider",
+             "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# ─────────────────────────────────────────────────────────
+# Red interna entre servicios del Backend.
+# Los backends NO están expuestos a internet directamente,
+# solo a través del Nginx del Frontend (principio mínimo privilegio).
+# ─────────────────────────────────────────────────────────
+networks:
+  backend-net:
+    driver: bridge

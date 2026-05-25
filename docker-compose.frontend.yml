@@ -1,0 +1,29 @@
+services:
+
+  # ─────────────────────────────────────────────────────────
+  # FRONTEND — React/Vite servido por Nginx (:80)
+  # Corre en la EC2 pública (subred pública)
+  # Nginx actúa como reverse proxy hacia los backends privados
+  # ─────────────────────────────────────────────────────────
+  front-despacho:
+    image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/innovatech/front-despacho:${IMAGE_TAG:-latest}
+    container_name: front-despacho
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      # IP privada de la EC2 Backend (subred privada)
+      BACKEND_IP: ${BACKEND_PRIVATE_IP}
+    networks:
+      - frontend-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider",
+             "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  frontend-net:
+    driver: bridge
