@@ -4,14 +4,10 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-    types: [closed]
   workflow_dispatch:
     inputs:
       reason:
-        description: 'Motivo del redeploy (ej: rotacion de secrets, hotfix)'
+        description: 'Motivo del redeploy'
         required: false
         default: 'Redeploy manual'
       service:
@@ -24,10 +20,9 @@ on:
           - back-ventas
           - back-despachos
           - front-despacho
-
 concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-main
+  cancel-in-progress: false
 
 env:
   AWS_REGION: us-east-1
