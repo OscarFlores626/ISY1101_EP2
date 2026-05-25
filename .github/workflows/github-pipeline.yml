@@ -42,7 +42,7 @@ jobs:
     name: Build & Push — back-ventas
     runs-on: ubuntu-latest
 
-    if: >
+    if: |
       github.event_name == 'push' ||
       github.event.inputs.service == 'all' ||
       github.event.inputs.service == 'back-ventas'
@@ -89,7 +89,7 @@ jobs:
     name: Build & Push — back-despachos
     runs-on: ubuntu-latest
 
-    if: >
+    if: |
       github.event_name == 'push' ||
       github.event.inputs.service == 'all' ||
       github.event.inputs.service == 'back-despachos'
@@ -136,7 +136,7 @@ jobs:
     name: Build & Push — front-despacho
     runs-on: ubuntu-latest
 
-    if: >
+    if: |
       github.event_name == 'push' ||
       github.event.inputs.service == 'all' ||
       github.event.inputs.service == 'front-despacho'
@@ -188,7 +188,8 @@ jobs:
       - build-back-ventas
       - build-back-despachos
 
-    if: always() &&
+    if: |
+      always() &&
       needs.build-back-ventas.result == 'success' &&
       needs.build-back-despachos.result == 'success'
 
@@ -225,44 +226,57 @@ jobs:
             --instance-ids "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --parameters commands="[
+
               \"set -ex\",
+
               \"docker --version\",
+
               \"docker compose version || true\",
+
               \"docker-compose version || true\",
+
               \"echo $COMPOSE_B64 | base64 -d > /home/ec2-user/docker-compose.backend.yml\",
+
               \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env\",
+
               \"cat /home/ec2-user/.env\",
+
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+
               \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env pull\",
+
               \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env up -d --remove-orphans\",
+
               \"docker ps -a\",
+
               \"docker image prune -f\"
+
             ]" \
             --query 'Command.CommandId' \
             --output text)
 
-            echo "COMMAND_ID=$COMMAND_ID"
-            
-            aws ssm wait command-executed \
-              --command-id "$COMMAND_ID" \
-              --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" || true
-            
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
-              --output json
-            
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
-              --query 'Status' \
-              --output text)
-            
-            echo "STATUS=$STATUS"
-             [ "$STATUS" != "Success" ]; then
-              e
-            ifxit 1
-            fi
+          echo "COMMAND_ID=$COMMAND_ID"
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" || true
+
+          aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
+            --output json
+
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
+            --query 'Status' \
+            --output text)
+
+          echo "STATUS=$STATUS"
+
+          if [ "$STATUS" != "Success" ]; then
+            exit 1
+          fi
 
   # =========================================================
   # DEPLOY — FRONTEND
@@ -275,7 +289,8 @@ jobs:
       - build-front-despacho
       - deploy-backend
 
-    if: always() &&
+    if: |
+      always() &&
       needs.build-front-despacho.result == 'success' &&
       needs.deploy-backend.result == 'success'
 
@@ -307,42 +322,56 @@ jobs:
             --instance-ids "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --parameters commands="[
+
               \"set -ex\",
+
               \"docker --version\",
+
               \"docker compose version || true\",
+
               \"docker-compose version || true\",
+
               \"echo $COMPOSE_B64 | base64 -d > /home/ec2-user/docker-compose.frontend.yml\",
+
               \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env.frontend\",
+
               \"cat /home/ec2-user/.env.frontend\",
+
               \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+
               \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend pull\",
+
               \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend up -d --remove-orphans\",
+
               \"docker ps -a\",
+
               \"docker logs front-despacho || true\",
+
               \"docker image prune -f\"
+
             ]" \
             --query 'Command.CommandId' \
             --output text)
 
           echo "COMMAND_ID=$COMMAND_ID"
-          
+
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" || true
-          
+            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" || true
+
           aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
+            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
             --output json
-          
+
           STATUS=$(aws ssm get-command-invocation \
             --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
+            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
             --query 'Status' \
             --output text)
-          
+
           echo "STATUS=$STATUS"
-          
+
           if [ "$STATUS" != "Success" ]; then
             exit 1
           fi
@@ -350,7 +379,6 @@ jobs:
       - name: Validar Frontend
         run: |
           sleep 20
-
           curl -v http://${{ vars.EC2_FRONTEND_PUBLIC_IP }}
 
       - name: Resumen
