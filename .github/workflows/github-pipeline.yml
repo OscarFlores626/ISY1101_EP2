@@ -198,15 +198,15 @@ jobs:
           COMPOSE_B64=$(base64 -w 0 docker-compose.backend.yml)
 
           ENV_CONTENT="AWS_ACCOUNT_ID=${{ vars.AWS_ACCOUNT_ID }}
-AWS_REGION=${{ env.AWS_REGION }}
-IMAGE_TAG=${{ env.IMAGE_TAG }}
-DB_ENDPOINT=${{ vars.DB_ENDPOINT }}
-DB_PORT=${{ vars.DB_PORT }}
-DB_NAME_VENTAS=${{ vars.DB_NAME_VENTAS }}
-DB_NAME_DESPACHOS=${{ vars.DB_NAME_DESPACHOS }}
-DB_USERNAME=${{ vars.DB_USERNAME }}
-DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
-          ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
+          AWS_REGION=${{ env.AWS_REGION }}
+          IMAGE_TAG=${{ env.IMAGE_TAG }}
+          DB_ENDPOINT=${{ vars.DB_ENDPOINT }}
+          DB_PORT=${{ vars.DB_PORT }}
+          DB_NAME_VENTAS=${{ vars.DB_NAME_VENTAS }}
+          DB_NAME_DESPACHOS=${{ vars.DB_NAME_DESPACHOS }}
+          DB_USERNAME=${{ vars.DB_USERNAME }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
+                    ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
@@ -274,10 +274,10 @@ DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
           COMPOSE_B64=$(base64 -w 0 docker-compose.frontend.yml)
 
           ENV_CONTENT="AWS_ACCOUNT_ID=${{ vars.AWS_ACCOUNT_ID }}
-AWS_REGION=${{ env.AWS_REGION }}
-IMAGE_TAG=${{ env.IMAGE_TAG }}
-BACKEND_PRIVATE_IP=${{ vars.EC2_BACKEND_PRIVATE_IP }}"
-          ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
+          AWS_REGION=${{ env.AWS_REGION }}
+          IMAGE_TAG=${{ env.IMAGE_TAG }}
+          BACKEND_PRIVATE_IP=${{ vars.EC2_BACKEND_PRIVATE_IP }}"
+                    ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
 
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
