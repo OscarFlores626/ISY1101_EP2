@@ -1,0 +1,28 @@
+# ─── Sistema operativo ───────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+Desktop.ini
+
+# ─── IDEs ────────────────────────────────────────────────────
+.idea/
+*.iml
+*.iws
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ─── Variables de entorno — NUNCA subir al repo ──────────────
+.env
+.env.*
+!.env.example
+
+# ─── Docker ──────────────────────────────────────────────────
+# No ignorar los Dockerfile ni los docker-compose, son parte del proyecto
+docker-compose.override.yml
