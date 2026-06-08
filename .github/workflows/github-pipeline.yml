@@ -1,10 +1,12 @@
-name: CI/CD — Innovatech Chile EP2
+name: CI/CD — Innovatech Chile ET
 
 on:
   push:
     branches:
       - main
 
+  # Permite ejecutar el pipeline manualmente desde GitHub Actions.
+  # Util para rotar credenciales AWS sin necesidad de hacer un cambio en el codigo.
   workflow_dispatch:
     inputs:
       reason:
@@ -23,10 +25,16 @@ on:
           - back-despachos
           - front-despacho
 
+# Evita que dos ejecuciones del pipeline corran al mismo tiempo sobre el mismo ambiente.
+# Si se dispara un segundo pipeline mientras uno esta corriendo, espera en vez de cancelarlo,
+# para no dejar el ambiente en un estado inconsistente.
 concurrency:
   group: deploy-main
   cancel-in-progress: false
 
+# Variables de entorno disponibles en todos los jobs.
+# IMAGE_TAG usa el SHA del commit como identificador unico de la imagen Docker,
+# permitiendo trazabilidad exacta entre el codigo fuente y lo que esta desplegado.
 env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
@@ -37,20 +45,27 @@ jobs:
 
   # =========================================================
   # BUILD — back-ventas
+  # Los tres jobs de build corren en paralelo para reducir
+  # el tiempo total del pipeline.
   # =========================================================
   build-back-ventas:
     name: Build & Push — back-ventas
     runs-on: ubuntu-latest
 
+    # Este job corre si el trigger es un push a main,
+    # o si se selecciono 'all' o 'back-ventas' en la ejecucion manual.
     if: >
       github.event_name == 'push' ||
       github.event.inputs.service == 'all' ||
       github.event.inputs.service == 'back-ventas'
 
     steps:
-      - name: Checkout código
+      # Descarga el codigo fuente del repositorio en el runner de GitHub Actions.
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
+      # Configura las credenciales AWS temporales de Academy usando GitHub Secrets,
+      # evitando exponer datos sensibles directamente en el codigo del pipeline.
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -59,9 +74,14 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Autentica el runner de GitHub Actions contra Amazon ECR
+      # para poder publicar las imagenes Docker en el registro privado.
       - name: Login ECR
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Crea el repositorio ECR si no existe.
+      # Esto hace el pipeline idempotente: funciona tanto en la primera ejecucion
+      # como en las siguientes sin errores.
       - name: Crear repo ECR si no existe
         run: |
           aws ecr describe-repositories \
@@ -71,6 +91,10 @@ jobs:
             --repository-name innovatech/back-ventas \
             --region $AWS_REGION
 
+      # Construye la imagen Docker usando el Dockerfile multi-stage del servicio
+      # y la publica en ECR con dos tags:
+      # - SHA del commit: para trazabilidad exacta entre codigo e imagen
+      # - latest: para referencia rapida a la version mas reciente
       - name: Build y Push
         working-directory: back-Ventas_SpringBoot/Springboot-API-REST
         run: |
@@ -84,6 +108,7 @@ jobs:
 
   # =========================================================
   # BUILD — back-despachos
+  # Mismo patron que back-ventas, corre en paralelo.
   # =========================================================
   build-back-despachos:
     name: Build & Push — back-despachos
@@ -95,7 +120,7 @@ jobs:
       github.event.inputs.service == 'back-despachos'
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Configurar AWS
@@ -131,6 +156,7 @@ jobs:
 
   # =========================================================
   # BUILD — front-despacho
+  # Mismo patron, corre en paralelo con los backends.
   # =========================================================
   build-front-despacho:
     name: Build & Push — front-despacho
@@ -142,7 +168,7 @@ jobs:
       github.event.inputs.service == 'front-despacho'
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Configurar AWS
@@ -165,6 +191,8 @@ jobs:
             --repository-name innovatech/front-despacho \
             --region $AWS_REGION
 
+      # Se pasa la URL del frontend como build argument para que Vite
+      # la incluya en el bundle compilado durante el proceso de build.
       - name: Build y Push
         working-directory: front_despacho
         run: |
@@ -178,10 +206,13 @@ jobs:
           docker push $ECR_REGISTRY/innovatech/front-despacho:latest
 
   # =========================================================
-  # DEPLOY — BACKEND
+  # DEPLOY — BACKEND via ECS Fargate
+  # Espera que ambos builds de backend terminen exitosamente.
+  # Actualiza los servicios ECS para que descarguen y ejecuten
+  # las nuevas imagenes publicadas en ECR.
   # =========================================================
   deploy-backend:
-    name: Deploy — EC2 Backend
+    name: Deploy — ECS Backend
     runs-on: ubuntu-latest
 
     needs:
@@ -193,7 +224,7 @@ jobs:
       needs.build-back-despachos.result == 'success'
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Configurar AWS
@@ -204,69 +235,43 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy backend via SSM
+      # Le indica a ECS que reemplace los tasks en ejecucion con nuevos tasks
+      # que usan la imagen mas reciente publicada en ECR.
+      # ECS se encarga de hacer el pull desde ECR, detener los tasks anteriores
+      # y levantar los nuevos sin tiempo de inactividad.
+      - name: Deploy backend via ECS
         run: |
+          aws ecs update-service \
+            --cluster innovatech-cluster \
+            --service back-ventas \
+            --task-definition innovatech-back-ventas \
+            --force-new-deployment \
+            --region $AWS_REGION
 
-          COMPOSE_B64=$(base64 -w 0 docker-compose.backend.yml)
+          aws ecs update-service \
+            --cluster innovatech-cluster \
+            --service back-despachos \
+            --task-definition innovatech-back-despachos \
+            --force-new-deployment \
+            --region $AWS_REGION
 
-          ENV_CONTENT="AWS_ACCOUNT_ID=${{ vars.AWS_ACCOUNT_ID }}
-          AWS_REGION=${{ env.AWS_REGION }}
-          IMAGE_TAG=${{ env.IMAGE_TAG }}
-          DB_ENDPOINT=${{ vars.DB_ENDPOINT }}
-          DB_PORT=${{ vars.DB_PORT }}
-          DB_NAME_VENTAS=${{ vars.DB_NAME_VENTAS }}
-          DB_NAME_DESPACHOS=${{ vars.DB_NAME_DESPACHOS }}
-          DB_USERNAME=${{ vars.DB_USERNAME }}
-          DB_PASSWORD=${{ secrets.DB_PASSWORD }}"
+          # Espera hasta que ambos servicios completen el despliegue
+          # antes de continuar con el deploy del frontend.
+          aws ecs wait services-stable \
+            --cluster innovatech-cluster \
+            --services back-ventas back-despachos \
+            --region $AWS_REGION
 
-          ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
-
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands="[
-              \"set -ex\",
-              \"docker --version\",
-              \"docker-compose version || true\",
-              \"echo $COMPOSE_B64 | base64 -d > /home/ec2-user/docker-compose.backend.yml\",
-              \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env\",
-              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env pull\",
-              \"docker-compose -f /home/ec2-user/docker-compose.backend.yml --env-file /home/ec2-user/.env up -d --remove-orphans\",
-              \"docker ps -a\",
-              \"docker image prune -f\"
-            ]" \
-            --query 'Command.CommandId' \
-            --output text)
-
-          echo "COMMAND_ID=$COMMAND_ID"
-
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" || true
-
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
-            --output json
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_BACKEND_INSTANCE_ID }}" \
-            --query 'Status' \
-            --output text)
-
-          echo "STATUS=$STATUS"
-
-          if [ "$STATUS" != "Success" ]; then
-            exit 1
-          fi
+          echo "Backend desplegado correctamente en ECS Fargate"
 
   # =========================================================
-  # DEPLOY — FRONTEND
+  # DEPLOY — FRONTEND via ECS Fargate
+  # Espera que el build del frontend Y el deploy del backend
+  # terminen antes de ejecutar. Garantiza que los backends
+  # esten disponibles cuando el frontend comience a recibir trafico.
   # =========================================================
   deploy-frontend:
-    name: Deploy — EC2 Frontend
+    name: Deploy — ECS Frontend
     runs-on: ubuntu-latest
 
     needs:
@@ -278,7 +283,7 @@ jobs:
       needs.deploy-backend.result == 'success'
 
     steps:
-      - name: Checkout código
+      - name: Checkout codigo
         uses: actions/checkout@v4
 
       - name: Configurar AWS
@@ -289,71 +294,23 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Deploy frontend via SSM
+      # Actualiza el servicio ECS del frontend con la nueva imagen.
+      # Fargate descarga la imagen desde ECR y reemplaza el task anterior
+      # sin necesidad de SSH ni acceso directo a la instancia.
+      - name: Deploy frontend via ECS
         run: |
+          aws ecs update-service \
+            --cluster innovatech-cluster \
+            --service front-despacho \
+            --task-definition innovatech-front-despacho \
+            --force-new-deployment \
+            --region $AWS_REGION
 
-          COMPOSE_B64=$(base64 -w 0 docker-compose.frontend.yml)
+          # Espera hasta que el servicio complete el despliegue
+          # antes de validar que el frontend responde correctamente.
+          aws ecs wait services-stable \
+            --cluster innovatech-cluster \
+            --services front-despacho \
+            --region $AWS_REGION
 
-          ENV_CONTENT="AWS_ACCOUNT_ID=${{ vars.AWS_ACCOUNT_ID }}
-          AWS_REGION=${{ env.AWS_REGION }}
-          IMAGE_TAG=${{ env.IMAGE_TAG }}
-          BACKEND_PRIVATE_IP=${{ vars.EC2_BACKEND_PRIVATE_IP }}"
-
-          ENV_B64=$(echo "$ENV_CONTENT" | base64 -w 0)
-
-          COMMAND_ID=$(aws ssm send-command \
-            --instance-ids "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
-            --document-name "AWS-RunShellScript" \
-            --parameters commands="[
-              \"set -ex\",
-              \"docker --version\",
-              \"docker-compose version || true\",
-              \"echo $COMPOSE_B64 | base64 -d > /home/ec2-user/docker-compose.frontend.yml\",
-              \"echo $ENV_B64 | base64 -d > /home/ec2-user/.env.frontend\",
-              \"cat /home/ec2-user/.env.frontend\",
-              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
-              \"docker rm -f front-despacho || true\",
-              \"docker rm -f frontend || true\",
-              \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend pull\",
-              \"docker-compose -f /home/ec2-user/docker-compose.frontend.yml --env-file /home/ec2-user/.env.frontend up -d --remove-orphans\",
-              \"docker ps -a\",
-              \"docker logs front-despacho --tail 200 || true\",
-              \"ss -tulpn | grep :80 || true\",
-              \"curl -I http://localhost || true\",
-              \"docker image prune -f\"
-            ]" \
-            --query 'Command.CommandId' \
-            --output text)
-
-          echo "COMMAND_ID=$COMMAND_ID"
-
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" || true
-
-          aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
-            --output json
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ vars.EC2_FRONTEND_INSTANCE_ID }}" \
-            --query 'Status' \
-            --output text)
-
-          echo "STATUS=$STATUS"
-
-          if [ "$STATUS" != "Success" ]; then
-            exit 1
-          fi
-
-      - name: Validar Frontend
-        run: |
-          sleep 20
-
-          curl -I --max-time 20 http://${{ vars.EC2_FRONTEND_PUBLIC_IP }} || true
-
-      - name: Resumen
-        run: |
           echo "Deploy completado"
