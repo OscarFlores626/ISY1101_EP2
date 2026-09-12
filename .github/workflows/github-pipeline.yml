@@ -63,7 +63,7 @@ jobs:
 
       - name: Ejecutar tests — back-ventas
         working-directory: back-Ventas_SpringBoot/Springboot-API-REST
-        run: mvn test -B
+        run: mvn test -B -Dspring.profiles.active=test
 
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -121,7 +121,7 @@ jobs:
 
       - name: Ejecutar tests — back-despachos
         working-directory: back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
-        run: mvn test -B
+        run: mvn test -B -Dspring.profiles.active=test
 
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4

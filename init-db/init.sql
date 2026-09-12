@@ -1,0 +1,6 @@
+CREATE DATABASE IF NOT EXISTS ventas;
+CREATE DATABASE IF NOT EXISTS despachos;
+CREATE USER IF NOT EXISTS 'appuser'@'%' IDENTIFIED BY 'app_local_dev';
+GRANT ALL PRIVILEGES ON ventas.* TO 'appuser'@'%';
+GRANT ALL PRIVILEGES ON despachos.* TO 'appuser'@'%';
+FLUSH PRIVILEGES;
