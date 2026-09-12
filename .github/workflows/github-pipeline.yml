@@ -5,8 +5,6 @@ on:
     branches:
       - main
 
-  # Permite ejecutar el pipeline manualmente desde GitHub Actions.
-  # Util para rotar credenciales AWS sin necesidad de hacer un cambio en el codigo.
   workflow_dispatch:
     inputs:
       reason:
@@ -25,16 +23,10 @@ on:
           - back-despachos
           - front-despacho
 
-# Evita que dos ejecuciones del pipeline corran al mismo tiempo sobre el mismo ambiente.
-# Si se dispara un segundo pipeline mientras uno esta corriendo, espera en vez de cancelarlo,
-# para no dejar el ambiente en un estado inconsistente.
 concurrency:
   group: deploy-main
   cancel-in-progress: false
 
-# Variables de entorno disponibles en todos los jobs.
-# IMAGE_TAG usa el SHA del commit como identificador unico de la imagen Docker,
-# permitiendo trazabilidad exacta entre el codigo fuente y lo que esta desplegado.
 env:
   AWS_REGION: us-east-1
   AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
@@ -45,27 +37,34 @@ jobs:
 
   # =========================================================
   # BUILD — back-ventas
-  # Los tres jobs de build corren en paralelo para reducir
-  # el tiempo total del pipeline.
   # =========================================================
   build-back-ventas:
     name: Build & Push — back-ventas
     runs-on: ubuntu-latest
 
-    # Este job corre si el trigger es un push a main,
-    # o si se selecciono 'all' o 'back-ventas' en la ejecucion manual.
     if: >
       github.event_name == 'push' ||
       github.event.inputs.service == 'all' ||
       github.event.inputs.service == 'back-ventas'
 
     steps:
-      # Descarga el codigo fuente del repositorio en el runner de GitHub Actions.
       - name: Checkout codigo
         uses: actions/checkout@v4
 
-      # Configura las credenciales AWS temporales de Academy usando GitHub Secrets,
-      # evitando exponer datos sensibles directamente en el codigo del pipeline.
+      # Etapa de test — corre antes del build de la imagen Docker,
+      # asi el pipeline falla temprano si hay un test roto y no
+      # se gasta tiempo construyendo una imagen sobre codigo defectuoso.
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: maven
+
+      - name: Ejecutar tests — back-ventas
+        working-directory: back-Ventas_SpringBoot/Springboot-API-REST
+        run: mvn test -B
+
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -74,14 +73,9 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Autentica el runner de GitHub Actions contra Amazon ECR
-      # para poder publicar las imagenes Docker en el registro privado.
       - name: Login ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Crea el repositorio ECR si no existe.
-      # Esto hace el pipeline idempotente: funciona tanto en la primera ejecucion
-      # como en las siguientes sin errores.
       - name: Crear repo ECR si no existe
         run: |
           aws ecr describe-repositories \
@@ -91,10 +85,6 @@ jobs:
             --repository-name innovatech/back-ventas \
             --region $AWS_REGION
 
-      # Construye la imagen Docker usando el Dockerfile multi-stage del servicio
-      # y la publica en ECR con dos tags:
-      # - SHA del commit: para trazabilidad exacta entre codigo e imagen
-      # - latest: para referencia rapida a la version mas reciente
       - name: Build y Push
         working-directory: back-Ventas_SpringBoot/Springboot-API-REST
         run: |
@@ -108,7 +98,6 @@ jobs:
 
   # =========================================================
   # BUILD — back-despachos
-  # Mismo patron que back-ventas, corre en paralelo.
   # =========================================================
   build-back-despachos:
     name: Build & Push — back-despachos
@@ -122,6 +111,17 @@ jobs:
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
+
+      - name: Configurar JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: maven
+
+      - name: Ejecutar tests — back-despachos
+        working-directory: back-Despachos_SpringBoot/Springboot-API-REST-DESPACHO
+        run: mvn test -B
 
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -156,7 +156,6 @@ jobs:
 
   # =========================================================
   # BUILD — front-despacho
-  # Mismo patron, corre en paralelo con los backends.
   # =========================================================
   build-front-despacho:
     name: Build & Push — front-despacho
@@ -170,6 +169,24 @@ jobs:
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
+
+      # Etapa de test — el proyecto no tiene tests unitarios configurados
+      # (sin script "test" en package.json), asi que la validacion de
+      # calidad de codigo es el lint estricto (max-warnings 0).
+      - name: Configurar Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: front_despacho/package-lock.json
+
+      - name: Instalar dependencias
+        working-directory: front_despacho
+        run: npm ci --frozen-lockfile
+
+      - name: Lint — front-despacho
+        working-directory: front_despacho
+        run: npm run lint
 
       - name: Configurar AWS
         uses: aws-actions/configure-aws-credentials@v4
@@ -191,8 +208,6 @@ jobs:
             --repository-name innovatech/front-despacho \
             --region $AWS_REGION
 
-      # Se pasa la URL del frontend como build argument para que Vite
-      # la incluya en el bundle compilado durante el proceso de build.
       - name: Build y Push
         working-directory: front_despacho
         run: |
@@ -207,9 +222,6 @@ jobs:
 
   # =========================================================
   # DEPLOY — BACKEND via ECS Fargate
-  # Espera que ambos builds de backend terminen exitosamente.
-  # Actualiza los servicios ECS para que descarguen y ejecuten
-  # las nuevas imagenes publicadas en ECR.
   # =========================================================
   deploy-backend:
     name: Deploy — ECS Backend
@@ -235,10 +247,6 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Le indica a ECS que reemplace los tasks en ejecucion con nuevos tasks
-      # que usan la imagen mas reciente publicada en ECR.
-      # ECS se encarga de hacer el pull desde ECR, detener los tasks anteriores
-      # y levantar los nuevos sin tiempo de inactividad.
       - name: Deploy backend via ECS
         run: |
           aws ecs update-service \
@@ -255,8 +263,6 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-          # Espera hasta que ambos servicios completen el despliegue
-          # antes de continuar con el deploy del frontend.
           aws ecs wait services-stable \
             --cluster innovatech-cluster \
             --services innovatech-back-ventas-svc innovatech-back-despachos-svc \
@@ -266,9 +272,6 @@ jobs:
 
   # =========================================================
   # DEPLOY — FRONTEND via ECS Fargate
-  # Espera que el build del frontend Y el deploy del backend
-  # terminen antes de ejecutar. Garantiza que los backends
-  # esten disponibles cuando el frontend comience a recibir trafico.
   # =========================================================
   deploy-frontend:
     name: Deploy — ECS Frontend
@@ -294,9 +297,6 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # Actualiza el servicio ECS del frontend con la nueva imagen.
-      # Fargate descarga la imagen desde ECR y reemplaza el task anterior
-      # sin necesidad de SSH ni acceso directo a la instancia.
       - name: Deploy frontend via ECS
         run: |
           aws ecs update-service \
@@ -306,8 +306,6 @@ jobs:
             --force-new-deployment \
             --region $AWS_REGION
 
-          # Espera hasta que el servicio complete el despliegue
-          # antes de validar que el frontend responde correctamente.
           aws ecs wait services-stable \
             --cluster innovatech-cluster \
             --services innovatech-front-despacho-svc \
