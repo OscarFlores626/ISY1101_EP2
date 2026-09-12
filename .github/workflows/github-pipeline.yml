@@ -243,14 +243,14 @@ jobs:
         run: |
           aws ecs update-service \
             --cluster innovatech-cluster \
-            --service back-ventas \
+            --service innovatech-back-ventas-svc \
             --task-definition innovatech-back-ventas \
             --force-new-deployment \
             --region $AWS_REGION
 
           aws ecs update-service \
             --cluster innovatech-cluster \
-            --service back-despachos \
+            --service innovatech-back-despachos-svc \
             --task-definition innovatech-back-despachos \
             --force-new-deployment \
             --region $AWS_REGION
@@ -259,7 +259,7 @@ jobs:
           # antes de continuar con el deploy del frontend.
           aws ecs wait services-stable \
             --cluster innovatech-cluster \
-            --services back-ventas back-despachos \
+            --services innovatech-back-ventas-svc innovatech-back-despachos-svc \
             --region $AWS_REGION
 
           echo "Backend desplegado correctamente en ECS Fargate"
@@ -301,7 +301,7 @@ jobs:
         run: |
           aws ecs update-service \
             --cluster innovatech-cluster \
-            --service front-despacho \
+            --service innovatech-front-despacho-svc \
             --task-definition innovatech-front-despacho \
             --force-new-deployment \
             --region $AWS_REGION
@@ -310,7 +310,7 @@ jobs:
           # antes de validar que el frontend responde correctamente.
           aws ecs wait services-stable \
             --cluster innovatech-cluster \
-            --services front-despacho \
+            --services innovatech-front-despacho-svc \
             --region $AWS_REGION
 
           echo "Deploy completado"
