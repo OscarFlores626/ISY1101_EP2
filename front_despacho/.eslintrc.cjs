@@ -17,5 +17,14 @@ module.exports = {
       'warn',
       { allowConstantExport: true },
     ],
+    // Desactivado: el proyecto no usa PropTypes como convención.
+    // Documentado como deuda técnica en el informe (IE2/IE3).
+    'react/prop-types': 'off',
   },
+  overrides: [
+    {
+      files: ['tailwind.config.js', 'vite.config.js', 'postcss.config.js'],
+      env: { node: true, browser: false },
+    },
+  ],
 }
